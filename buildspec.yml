@@ -1,0 +1,72 @@
+version: 0.2
+
+env:
+  variables:
+    region1: "us-east-1"
+    region2: "us-east-2"
+    endpoint: "https://helloapi.m2.com/"  
+  parameter-store:
+    status: "200"      
+  secrets-manager:
+    AWS_ACCESS_KEY_ID: secret-id:json-key:version-stage:version-id
+    AWS_SECRET_ACCESS_KEY: secret-id:json-key:version-stage:version-id
+  
+phases:
+  install:
+    runtime-versions:
+      python: 3.8
+  pre_build:
+    commands:
+      - echo "Pre-Build phase"
+      - apt-get update -y
+
+  build:
+    on-failure: ABORT    
+    commands:
+      - echo "Infrastructure deployment phase"
+      - git clone https://github.com/ImmLearning/AWS-serverless.git
+      - cd hello-api
+      - aws cloudformation package --template-file hello.yaml --output-template-file /tmp/cf-hello.yaml --s3-bucket hello1 --region us-east-1  
+      - aws cloudformation deploy --template-file /tmp/cf-hello.yaml --stack-name multiregionhello --capabilities CAPABILITY_IAM --region us-east-1
+      - echo " Lambda1 deployed now deploying Lambda 2"
+      - aws cloudformation package --template-file hello.yaml --output-template-file /tmp/cf-hello.yaml --s3-bucket hello2 --region us-west-2
+      - aws cloudformation deploy --template-file /tmp/cf-hello.yaml --stack-name multiregionhello --capabilities CAPABILITY_IAM --region us-west-2
+      - echo "deploying DNS"
+      - aws cloudformation package --template-file hello-dns.yaml --output-template-file /tmp/cf-hellodns.yaml --s3-bucket hello2 --region us-east-1
+      - aws cloudformation deploy --template-file /tmp/cf-hellodns.yaml --stack-name hellodns --capabilities CAPABILITY_IAM --region us-east-1
+      - aws cloudformation package --template-file hello-dns.yaml --output-template-file /tmp/cf-hellodns.yaml --s3-bucket hello1 --region us-west-2
+      - aws cloudformation deploy --template-file /tmp/cf-hellodns.yaml --stack-name hellodns --capabilities CAPABILITY_IAM --region us-west-2        
+
+  post_build:
+    commands:
+      - echo "Post-Build we can test lamba endpoints now"
+      - curl https://xxxxxxxx.execute-api.us-east-1.amazonaws.com/prod/hello  
+      - curl https://xxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/hello  
+      # setting up optional weighted routing on the AWS API gateway to twenty-eighty percent
+      # aws apigateway update-stage --rest-api-id xxxxxxx --stage-name prod --patch-operations op='replace',path='/deploymentCanarySettings/percentTraffic',value='20'
+
+
+artifacts:
+  files:
+    - hello.yaml
+
+# Manual Approval Action
+# The pipeline will pause here and wait for manual approval before proceeding
+artifacts:
+  - name: BuildArtifact
+    location: hello.yaml
+actions:
+  - inputArtifacts:
+      - name: BuildArtifact
+    name: ManualApproval
+    actionTypeId:
+      category: Approval
+      owner: AWS
+      provider: Manual
+      version: 1
+    runOrder: 1
+    configuration:
+      CustomData: "Please approve the CloudFormation stack deployment"
+      NotificationArn: "arn:aws:sns:us-east-1:123456789012:MyApprovalTopic"
+      Summary: "Manual approval is required for CloudFormation stack deployment"      
+        
