@@ -24,7 +24,7 @@ CICD pipeline created in code deploy with manual approvals for the different sta
 ## Code repo 
 Code hosted in this Github repo and optionally deployment can be triggered using a web hook integration following GitOps best practices.
 
-###Explaingint this Design 
+### Explaingint this Design 
 1. Usual Architecture for this scenario - 
    The general solution for a multi server , weighted routing is by hosting Nginx servers on EC2 machines as part of an autoscaling group with an ALB in front to handle the weighted routing.
 
